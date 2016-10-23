@@ -1,96 +1,111 @@
+var config = require('../config')
+
 module.exports = function(app) {
 
   var cors = require('cors');
-  var Heart = require('../models/heart.js');
+  var mysql = require('mysql')
+  var moment   = require('moment');
+
+  var connection = mysql.createConnection(config)
+
+  app.use(function (req, res, next) {
+    // Website you wish to allow to connect
+    res.setHeader('Access-Control-Allow-Origin', '*');
+
+    // Request methods you wish to allow
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS, PUT, PATCH, DELETE');
+
+    // Request headers you wish to allow
+    res.setHeader('Access-Control-Allow-Headers', 'X-Requested-With,content-type');
+
+    // Set to true if you need the website to include cookies in the requests sent
+    // to the API (e.g. in case you use sessions)
+    res.setHeader('Access-Control-Allow-Credentials', true);
+
+    // Pass to next layer of middleware
+    next();
+  })
 
   var corsOptions = {
-    origin: 'http://localhost:9000',
+    origin: '*',
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
     optionsSuccessStatus: 200 // some legacy browsers (IE11, various SmartTVs) choke on 204
   }
 
   //GET - Return all hearts in the DB
   findAllHearts = function(req, res) {
-    Heart.find(function(err, hearts) {
-      if(!err) {
-        console.log('GET /hearts')
-        res.send(hearts);
+    connection.query('SELECT * FROM Hearts', function (err, hearts) {
+      if (!err) {
+        res.send(hearts)
       } else {
-        console.log('ERROR: ' + err);
+        res.statusCode = 404
+        res.send({ message: 'You don\'t have any heart yet' })
       }
-    });
+    })
   };
 
-  //GET - Return a Heart with specified ID
+  // GET - Return a Heart with specified ID
   findById = function(req, res) {
-    Heart.findById(req.params.id, function(err, heart) {
-      if(!err) {
-        console.log('GET /heart/' + req.params.id);
-        res.send(heart);
+    connection.query('SELECT * FROM Hearts WHERE id = ?', req.params.id, function (err, heart) {
+      if (!err) {
+        res.send(heart)
       } else {
-        console.log('ERROR: ' + err);
+        res.statusCode = 404
+        res.send({ message: 'This heart don\'t exist' })
       }
-    });
-  };
+    })
+  }
 
-  //POST - Insert a new Heart in the DB
+  // POST - Insert a new Heart in the DB
   addHeart = function(req, res) {
-    console.log('POST');
-    console.log(req.body);
+    connection.query('INSERT INTO Hearts (color, size, creation_date) VALUES (?, ?, ?)',
+      [req.body.color, req.body.size, moment().format('DD-MM-YY HH:mm:ss')],
+      function (err, response) {
+        if (!err) {
+          var req = {
+            params: { id: response.insertId }
+          }
+          this.findById(req, res)
+        } else {
+          res.statusCode = 409
+          res.send({ message: 'Error creating new heart' })
+        }
+      }.bind(this))
+  }
 
-    var heart = new Heart({
-      color:    req.body.color,
-      size:     req.body.size
-    });
-
-    heart.save(function(err) {
-      if(!err) {
-        console.log('Created');
-      } else {
-        console.log('ERROR: ' + err);
-      }
-    });
-
-    res.send(heart);
-  };
-
-  //PUT - Update a register already exists
+  // PATCH - Update a register already exists
   updateHeart = function(req, res) {
-    console.log(req, res)
-    Heart.findById(req.params.id, function(err, heart) {
-      heart.title   = req.body.petId;
-      heart.color    = req.body.color;
-      heart.size = req.body.size;
-
-      heart.save(function(err) {
-        if(!err) {
-          console.log('Updated');
+    connection.query('UPDATE Hearts SET color=?, size=? WHERE id=?',
+      [req.body.color, req.body.size, req.params.id],
+      function (err, response) {
+        if (!err) {
+          res.send(response)
         } else {
-          console.log('ERROR: ' + err);
+          res.statusCode = 409
+          res.send({ message: 'Error updating heart ' + req.params.id })
         }
-        res.send(heart);
-      });
-    });
+      }
+    )
   }
 
-  //DELETE - Delete a heart with specified ID
+  // DELETE - Delete a heart with specified ID
   deleteHeart = function(req, res) {
-    Heart.findById(req.params.id, function(err, heart) {
-      heart.remove(function(err) {
-        if(!err) {
-          console.log('Removed');
-        } else {
-          console.log('ERROR: ' + err);
-        }
-      })
-    });
+    connection.query('DELETE FROM Hearts WHERE id=?', req.params.id, function (err, response) {
+      if (!err) {
+        res.send({ status: 'OK', response: 'Deleted heart ' + req.params.id })
+      } else {
+        res.statusCode = 409
+        res.send({ message: 'Error erasing heart ' + req.params.id })
+      }
+    })
   }
 
-  //Link routes and functions
-  app.get('/hearts', cors(corsOptions), findAllHearts);
-  app.get('/heart/:id', cors(corsOptions), findById);
-  app.post('/heart', cors(corsOptions), addHeart);
-  app.put('/heart/:id', cors(corsOptions), updateHeart);
-  app.delete('/heart/:id', cors(corsOptions), deleteHeart);
+  // Link routes and functions
+  app.get('/hearts', cors(corsOptions), findAllHearts)
+  app.get('/heart/:id', cors(corsOptions), findById)
+  app.post('/heart', cors(corsOptions), addHeart)
+  app.patch('/heart/:id', cors(corsOptions), updateHeart)
+  app.delete('/heart/:id', cors(corsOptions), deleteHeart)
+  app.options('/heart/:id', cors(corsOptions))
 
 }
